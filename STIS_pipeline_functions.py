@@ -40,7 +40,6 @@ from astropy.time import Time
 from transitspectroscopy import spectroscopy
 
 import batman
-import starry
 import lmfit
 import dynesty
 from dynesty import plotting as dyplot
