@@ -85,6 +85,7 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
     
     # initializing some lists to hold the data
     data_hold = []
+    error_hold = []
     headers_hold = []
     jitter_hold = []
     dqs_hold = []
@@ -96,12 +97,17 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
     for fits_file in files:
         hdulist = fits.open(fits_file)
         sciextlist = []
+        errextlist = []
         dqextlist = []
 
-        # finding which fits extensions correspond to the science and dq frames, if applicable
+        # finding which fits extensions correspond to the science, error, and dq frames, if applicable
         for i in range(len(hdulist.info(0))):
             if hdulist.info(0)[i][1] == "SCI":
                 sciextlist.append(i)
+            
+            if hdulist.info(0)[i][1] == "ERR":
+                errextlist.append(i)
+                
             if dq == True:
                 if hdulist.info(0)[i][1] == "DQ":
                     dqextlist.append(i)
@@ -117,6 +123,12 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
                 header_lst.append(header)
             else:
                 continue
+                
+        # getting the error frames
+        error_lst = []
+        for e in errextlist:
+            err = fits.getdata(fits_file, ext = e, header = False)
+            error_lst.append(err)
 
         # getting the data quality frames
         if dq == True:
@@ -151,6 +163,7 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
         # adding each orbit's data to master list
         data_hold = data_hold + data_lst
         headers_hold = headers_hold + header_lst
+        error_hold = error_hold + error_lst
         
         if dq == True:
             dqs_hold = dqs_hold + dq_lst
@@ -168,13 +181,13 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
         
     
     if dq == True and jit == True:
-        return data_hold, headers_hold, jitter_dict, dqs_hold
+        return data_hold, headers_hold, jitter_dict, dqs_hold, error_hold
     elif dq == True and jit == False:
-        return data_hold, headers_hold, dqs_hold
+        return data_hold, headers_hold, dqs_hold, error_hold
     elif dq == False and jit == True:
-        return data_hold, headers_hold, jitter_dict
+        return data_hold, headers_hold, jitter_dict, error_hold
     else:
-        return data_hold, headers_hold
+        return data_hold, headers_hold, error_hold
 
 
 
@@ -315,7 +328,7 @@ def difference_clean(files, difference_sigma, wind_size, sigma):
 
 
 
-def hc_clean(files, hc_sigma, hc_wind_size):
+def hc_clean(files, hc_sigma, hc_window_size):
     
     # initializing list
     hcs = []
@@ -537,13 +550,13 @@ def times_to_bjd(headers):
     return t_start_bjd, t_end_bjd
 
 
-def spectral_extraction(data, trace, method = "optimal", correct_bkg = False, aperture_radius = 15., ron = 1., gain = 1.,                         nsigma = 10, polynomial_spacing = 0.75, polynomial_order = 3):
+def spectral_extraction(data, trace, method = "optimal", correct_bkg = False, aperture_radius = 15., ron = 1., gain = 1.,                         nsigma = 10, polynomial_spacing = 0.75, polynomial_order = 3, errors = None):
     
     if method == "optimal":
-        spectrum = spectroscopy.getOptimalSpectrum(data, trace, aperture_radius, ron, gain, nsigma, polynomial_spacing, polynomial_order)#, min_column = 600)
+        spectrum = spectroscopy.getOptimalSpectrum(data, trace, aperture_radius, ron, gain, nsigma, polynomial_spacing, polynomial_order, data_variance = np.array(errors)**2)#, min_column = 600)
     elif method == "simple":
         x = np.arange(len(data)) # i think? test
-        spectrum = spectroscopy.getSimpleExtraction(data, x, trace, aperture_radius, correct_bkg = correct_bkg)#, min_column = 600)
+        spectrum = spectroscopy.getSimpleSpectrum(data, x, trace, aperture_radius, correct_bkg = correct_bkg, error_data = errors)#, min_column = 600)
 
     return spectrum
 
