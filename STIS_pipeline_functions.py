@@ -79,7 +79,6 @@ get_ipython().run_line_magic('matplotlib', 'inline')
 
 # function that opens each orbit fits file and gets the science exposures
 # optional kwargs to also get the dq extensions and jit vectors, for later use in cleaning/detrending the data
-# ADD: get rid of one second exposures
 # ADD: automatically throws out the first exposure of each orbit, option to also throw out the first orbit
 # ADD: error message if jit file doesn't exist
 def get_data(files, dq = True, jit = True, keep_first_orbit = True):
@@ -112,8 +111,12 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
         header_lst = []
         for j in sciextlist:
             data, header = fits.getdata(fits_file, ext = j, header=True)
-            data_lst.append(data)
-            header_lst.append(header)
+            # getting rid of one second exposures
+            if header["EXPTIME"] !=  1.0:
+                data_lst.append(data)
+                header_lst.append(header)
+            else:
+                continue
 
         # getting the data quality frames
         if dq == True:
