@@ -243,7 +243,7 @@ def dq_clean(files, dqs, flags = [16]):
     return files_clean
 
 
-def difference_clean(files, difference_sigma, wind_size, wind_sigma):
+def difference_clean(files, difference_sigma, wind_size, sigma):
     
     # initializing lists
     differences = []
@@ -277,7 +277,7 @@ def difference_clean(files, difference_sigma, wind_size, wind_sigma):
 
         medians.append(median_frame)
         
-    # in each median frame, in each row sigma reject in windows given by wind_size and wind_sigma
+    # in each median frame, in each row sigma reject in windows given by wind_size and sigma
     cr_loc = []
     cr_loc_frame = []
     files_clean = np.zeros_like(files)
@@ -475,7 +475,7 @@ def spline_clean(files, splines = None):
 
 
 # how best to name the variables and still be able to feed them in? use the same name for all the arrays? seems dangerous
-def clean_data(files, dq_correct = True, dqs = None, difference_correct = True, difference_sigma = 5,                wind_size = 20, wind_sigma = 5, hc_correct = True, hc_sigma = 3, hc_wind_size = 2,                spline_correct = True, traces = None, spline_sigma = 3):
+def clean_data(files, dq_correct = True, dqs = None, difference_correct = True, difference_sigma = 5, wind_size = 20, wind_sigma = 5, hc_correct = True, hc_sigma = 3, hc_wind_size = 2, spline_correct = True, traces = None, spline_sigma = 3):
     
     if dq_correct == True:
         if dqs == None:
