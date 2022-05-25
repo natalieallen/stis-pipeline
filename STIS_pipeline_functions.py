@@ -351,7 +351,7 @@ def hc_clean(files, hc_sigma, hc_window_size):
                 box_med = np.nanmedian(box_less)
                 box_stdev = np.sqrt(np.var(box_less))
                 
-                if splines_hcs[frame_idx][p,q] < box_med - (box_stdev * sigma_hc) or splines_hcs[frame_idx][p,q] > box_med + (box_stdev * sigma_hc):
+                if splines_hcs[frame_idx][p,q] < box_med - (box_stdev * hc_sigma) or splines_hcs[frame_idx][p,q] > box_med + (box_stdev * hc_sigma):
                     hcs.append([p,q])
                     frame[p][q] = -3
         
@@ -360,7 +360,7 @@ def hc_clean(files, hc_sigma, hc_window_size):
     return files_clean
 
 
-def spline_clean(files, traces, spline_sigma):
+def spline_mark(files, traces, spline_sigma):
 
     files_clean = np.zeros_like(files)
     # take average of spline fits across frames
@@ -514,7 +514,7 @@ def clean_data(files, dq_correct = True, dqs = None, difference_correct = True, 
             print("Oops! You need basic spectral traces for the spline fit option :)")
             return
         else:
-            marked_4, splines = spline_clean(marked_3, traces, spline_sigma)
+            marked_4, splines = spline_mark(marked_3, traces, spline_sigma)
             cleaned_data = spline_clean(marked_4, splines = splines)
     else:
         marked_4 = np.copy(marked_3)
