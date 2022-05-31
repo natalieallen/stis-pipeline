@@ -406,7 +406,7 @@ def spline_mark(files, traces, spline_sigma):
             # scale the normalized median spline to the max of the frame before taking residual
             resid = frame[:,k] - (spline_use[:,k])
             resid_stdev = np.sqrt(np.var(resid))
-            cutoff = resid_stdev * sigma_spline
+            cutoff = resid_stdev * spline_sigma
             #print(cutoff)
             #plt.plot(resid)
             #plt.show()
@@ -432,7 +432,7 @@ def spline_mark(files, traces, spline_sigma):
 
 
 def spline_clean(files, splines = None):
-    if splines == None:
+    if splines.any() == None:
         # take average of spline fits across frames
         splines = np.zeros_like(files[0])
         # for each column
