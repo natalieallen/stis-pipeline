@@ -645,9 +645,9 @@ def model_light_curve(p, t, params, jitters):
     # more finely sampled time grid for visualization purposes
     t_final = np.linspace(t[0], t[-1], 1000)
     light_curve_plot = batman.TransitModel(params, t_final).light_curve(params)
-    plt.plot(t_final, p['f0'] * light_curve_plot)
-    plt.xlabel("Time (BJD-TBD)")
-    plt.ylabel("Counts")
+    #plt.plot(t_final, p['f0'] * light_curve_plot)
+    #plt.xlabel("Time (BJD-TBD)")
+    #plt.ylabel("Counts")
     
     return model, systematics, light_curve
 
@@ -660,6 +660,7 @@ def residual(p, t, params, data, err, jitters):#, telescope_pos, err):
     model = model_light_curve(p, t, params, jitters)[0]#, telescope_pos)[0]
     sys = model_light_curve(p, t, params, jitters)[1]
     
+    '''
     plt.scatter(t, data/sys, color = "purple", label = "with systematics")
     plt.legend()
     plt.xlabel("Time (BJD-TBD)")
@@ -671,12 +672,11 @@ def residual(p, t, params, data, err, jitters):#, telescope_pos, err):
     plt.xlabel("Time (BJD-TBD)")
     plt.ylabel("Counts")
     plt.show()
-    
+    '''
     if err is None:
         err = np.sqrt(p['f0']) # if no errorbars specified, assume shot noise uncertainty from baseline flux
 
     chi2 = sum((data-model)**2/err**2)
-    print(chi2)
     res = np.std((data-model)/max(model))
     
     return (data-model)/err
