@@ -139,22 +139,27 @@ def get_data(files, dq = True, jit = True, keep_first_orbit = True):
                 
         if jit == True:
             # gets corresponding .jit file for each .fits file
-            corresponding_jit_file = fits.open(fits_file.replace("flt","jit")) 
-            
-            # gets the names of the different jitter vectors
-            jitter_vector_list = corresponding_jit_file[1].columns.names 
-            
-            # initialize an intermediate list
-            jitter_lst = []
+            data, header = fits.getdata(fits_file, ext = j, header=True)
+            # getting rid of one second exposures
+            if header["EXPTIME"] !=  1.0:
+                corresponding_jit_file = fits.open(fits_file.replace("flt","jit")) 
 
-            for jitter_hdu in corresponding_jit_file: # iterates through each exposure of each file
-                if jitter_hdu.name == 'jit':
-                    dummy_jit_array = []
-                    for jitvect in jitter_vector_list: # iterates through each jitter vector name
-                        jitter_points = jitter_hdu.data[jitvect]
-                        jitter_points[jitter_points > 1e30] = np.median(jitter_points) # kills weird edge cases
-                        dummy_jit_array.append(np.mean(jitter_points)) # saves the mean jitter value inside of each exposure
-                    jitter_lst.append(dummy_jit_array)
+                # gets the names of the different jitter vectors
+                jitter_vector_list = corresponding_jit_file[1].columns.names 
+
+                # initialize an intermediate list
+                jitter_lst = []
+
+                for jitter_hdu in corresponding_jit_file: # iterates through each exposure of each file
+                    if jitter_hdu.name == 'jit':
+                        dummy_jit_array = []
+                        for jitvect in jitter_vector_list: # iterates through each jitter vector name
+                            jitter_points = jitter_hdu.data[jitvect]
+                            jitter_points[jitter_points > 1e30] = np.median(jitter_points) # kills weird edge cases
+                            dummy_jit_array.append(np.mean(jitter_points)) # saves the mean jitter value inside of each exposure
+                        jitter_lst.append(dummy_jit_array)
+            else:
+                jitter_lst = []
         
         
         #i'm not returning this at the moment but can if they're needed
@@ -432,7 +437,7 @@ def spline_mark(files, traces, spline_sigma):
 
 
 def spline_clean(files, splines = None):
-    if splines.any() == None:
+    if splines is None:
         # take average of spline fits across frames
         splines = np.zeros_like(files[0])
         # for each column
@@ -491,7 +496,7 @@ def spline_clean(files, splines = None):
 def clean_data(files, dq_correct = True, dqs = None, difference_correct = True, difference_sigma = 5, wind_size = 20, wind_sigma = 5, hc_correct = True, hc_sigma = 3, hc_wind_size = 2, spline_correct = True, traces = None, spline_sigma = 3):
     
     if dq_correct == True:
-        if dqs == None:
+        if dqs is None:
             print("Oops! You need the data quality frames corresponding to each exposure for the dq_correct." +                   "You can get these from the get_data function with dq = True")
             return
         else:
@@ -510,7 +515,7 @@ def clean_data(files, dq_correct = True, dqs = None, difference_correct = True, 
         marked_3 = np.copy(marked_2)
         
     if spline_correct == True:
-        if traces == None:
+        if traces is None:
             print("Oops! You need basic spectral traces for the spline fit option :)")
             return
         else:
@@ -524,7 +529,7 @@ def clean_data(files, dq_correct = True, dqs = None, difference_correct = True, 
 
 
 
-def times_to_bjd(headers):
+def times_to_bjd(headers, starname = "WASP-69"):
     times = []
     exptimes = []
     expstart = []
@@ -544,19 +549,27 @@ def times_to_bjd(headers):
     t_end = Time(np.array(expend)+jd_conv, format='jd', scale='utc')
     #t = t.plot_date
 
-    t_start_bjd = utc_tdb.JDUTC_to_BJDTDB(t_start,starname = "WASP-69")#hip_id=8102 , lat=-30.169283, longi=-70.806789, alt=2241.9)
-    t_end_bjd = utc_tdb.JDUTC_to_BJDTDB(t_end,starname = "WASP-69")# , lat=-30.169283, longi=-70.806789, alt=2241.9)
+    t_start_bjd = utc_tdb.JDUTC_to_BJDTDB(t_start,starname = starname)#hip_id=8102 , lat=-30.169283, longi=-70.806789, alt=2241.9)
+    t_end_bjd = utc_tdb.JDUTC_to_BJDTDB(t_end,starname = starname)# , lat=-30.169283, longi=-70.806789, alt=2241.9)
 
     return t_start_bjd, t_end_bjd
 
 
 def spectral_extraction(data, trace, method = "optimal", correct_bkg = False, aperture_radius = 15., ron = 1., gain = 1.,                         nsigma = 10, polynomial_spacing = 0.75, polynomial_order = 3, errors = None):
     
-    if method == "optimal":
-        spectrum = spectroscopy.getOptimalSpectrum(data, trace, aperture_radius, ron, gain, nsigma, polynomial_spacing, polynomial_order, data_variance = np.array(errors)**2)#, min_column = 600)
-    elif method == "simple":
-        x = np.arange(len(data)) # i think? test
-        spectrum = spectroscopy.getSimpleSpectrum(data, x, trace, aperture_radius, correct_bkg = correct_bkg, error_data = errors)#, min_column = 600)
+    if errors is not None:
+        if method == "optimal":
+            spectrum = spectroscopy.getOptimalSpectrum(data, trace, aperture_radius, ron, gain, nsigma, polynomial_spacing, polynomial_order, data_variance = np.array(errors)**2)#, min_column = 600)
+        elif method == "simple":
+            spectrum = spectroscopy.getSimpleSpectrum(data, trace[0], trace[1], aperture_radius, correct_bkg = correct_bkg, error_data = errors)#, min_column = 600)
+        
+        
+    else:
+        if method == "optimal":
+            spectrum = spectroscopy.getOptimalSpectrum(data, trace[1], aperture_radius, ron, gain, nsigma, polynomial_spacing, polynomial_order)#, min_column = 600)
+        elif method == "simple": 
+            spectrum = spectroscopy.getSimpleSpectrum(data, trace[0], trace[1], aperture_radius, correct_bkg = correct_bkg)#, min_column = 600)
+        
 
     return spectrum
 
@@ -589,6 +602,12 @@ def xcorr(x,y):
     maxlag = - result[1]/(2.*result[0])
     return lags, corr,maxlag
 
+
+def impact_param(i, a_Rs):
+    return a_Rs*np.cos(np.deg2rad(i))
+
+def inclination(b, a_Rs):
+    return np.rad2deg(np.arccos(b/a_Rs))
 
 # ADD SYSTEMATICS OPTION FOR GP
 
@@ -623,12 +642,13 @@ def model_light_curve(p, t, params, jitters):
     #plt.plot(systematics)
     
     model = p['f0'] * light_curve * systematics
+    # more finely sampled time grid for visualization purposes
+    t_final = np.linspace(t[0], t[-1], 1000)
     light_curve_plot = batman.TransitModel(params, t_final).light_curve(params)
     plt.plot(t_final, p['f0'] * light_curve_plot)
-    #plt.plot(model)
-    #plt.plot(model)
-    #plt.show()
-    #print(model)
+    plt.xlabel("Time (BJD-TBD)")
+    plt.ylabel("Counts")
+    
     return model, systematics, light_curve
 
     
@@ -642,13 +662,17 @@ def residual(p, t, params, data, err, jitters):#, telescope_pos, err):
     
     plt.scatter(t, data/sys, color = "purple", label = "with systematics")
     plt.legend()
+    plt.xlabel("Time (BJD-TBD)")
+    plt.ylabel("Counts")
     plt.show()
     plt.plot(t, model)
     plt.scatter(t, data, color = "blue", label = "Original", alpha = 0.5)
     plt.legend()
+    plt.xlabel("Time (BJD-TBD)")
+    plt.ylabel("Counts")
     plt.show()
     
-    if err == None:
+    if err is None:
         err = np.sqrt(p['f0']) # if no errorbars specified, assume shot noise uncertainty from baseline flux
 
     chi2 = sum((data-model)**2/err**2)
@@ -656,6 +680,16 @@ def residual(p, t, params, data, err, jitters):#, telescope_pos, err):
     res = np.std((data-model)/max(model))
     
     return (data-model)/err
+
+def transit_final(p, t, params, jitters):
+    transit_model_final = batman.TransitModel(params, t).light_curve(params)
+    systematics = p["v2_roll"]*np.array(jitters["V2_roll"]) + p["v3_roll"]*np.array(jitters["V3_roll"]) + \
+    p["lat"]*np.array(jitters["Latitude"]) + p["long"]*np.array(jitters["Longitude"]) + \
+    p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1
+    
+    #final_model = p["f0"] * transit_model_final * systematics
+    
+    return [p["f0"], transit_model_final, systematics]
 
 #Limb Darkeneing
 @custom_model
