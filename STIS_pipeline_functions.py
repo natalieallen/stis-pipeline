@@ -609,7 +609,7 @@ def impact_param(i, a_Rs):
 def inclination(b, a_Rs):
     return np.rad2deg(np.arccos(b/a_Rs))
 
-def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3):
+def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3, gp_name = None):
     # these are bad right now - i'm just manually putting in system values for wasp-69b since the plan is to add a call to the
     # updated parameter database later. once those are in place, will be able to make these much better
     if sys_method == "jitter":
@@ -623,7 +623,7 @@ def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3):
         # keeping bounds fairly wide is important. central guess not so much
 
         # orbital params
-        p.add('t0', value = times_less[35], vary = 1, min = times_less[0], max = times_less[-1])
+        p.add('t0', value = times[35], vary = 1, min = times[0], max = times[-1])
         p.add('per', value = 3.868, vary = 0)#1, min = 3.5, max = 4.5)
         p.add('a', value = 11.314, vary = 0)#1, min = 2, max = 20)
         p.add('b', value = 0.69, vary = 0)#1, min = 0, max = 1)
@@ -654,7 +654,7 @@ def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3):
         err = None
         for _ in range(N_iters-1):
             result = lmfit.minimize(residual, params = p, args = (times, params, lc, err, jitters)) # fit data
-            err = np.std(lc_less - model_light_curve(p, times, params, jitters)[0])
+            err = np.std(lc - model_light_curve(p, times, params, jitters)[0])
             for name, param in result.params.items(): # iterate through our lmfit parameters and update the variables
                 p[name].value = param.value
 
@@ -688,7 +688,7 @@ def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3):
         dists = ['fixed','normal','uniform','fixed', 'fixed', 'uniform','uniform','fixed','fixed',\
                          'loguniform', 'fixed', 'normal', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform']#, 'loguniform']
 
-        hyperps = [3.868, [times[0][0][38],.1], [0.1,.3], 0.686, 12.00, [0, 1.0], [0., 1.0], 0.0, 90.,\
+        hyperps = [3.868, [times[38],.1], [0.1,.3], 0.686, 12.00, [0, 1.0], [0., 1.0], 0.0, 90.,\
                            [300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3]]#, [1e-3,1e3]]
 
 
@@ -698,9 +698,12 @@ def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3):
             priors[param]['distribution'], priors[param]['hyperparameters'] = dist, hyperp
 
         # Perform the juliet fit. Load dataset first:
-        dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
+        if gp_name is None:
+            print("Oops! you need to enter a name for the output folder for your GP fit")
+        else:
+            dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
                               yerr_lc = fluxes_error, GP_regressors_lc = sys,
-                              out_folder = 'wasp-69_bp_less')
+                              out_folder = gp_name)
 
         # Fit:
         results = dataset.fit(n_live_points = 500, verbose = True)
