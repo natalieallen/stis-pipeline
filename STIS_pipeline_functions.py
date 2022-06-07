@@ -609,7 +609,104 @@ def impact_param(i, a_Rs):
 def inclination(b, a_Rs):
     return np.rad2deg(np.arccos(b/a_Rs))
 
-# ADD SYSTEMATICS OPTION FOR GP
+def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3):
+    # these are bad right now - i'm just manually putting in system values for wasp-69b since the plan is to add a call to the
+    # updated parameter database later. once those are in place, will be able to make these much better
+    if sys_method == "jitter":
+        p = lmfit.Parameters()
+        fit_param = {} # dictionary to save our fit params
+        fit_uncs = {} # dictionary to save our fit uncertainties
+        params = batman.TransitParams()
+        N_iters = N_iters
+        # initializing lmfit parameters
+        # vary = 0 for fixed, 1 for floating
+        # keeping bounds fairly wide is important. central guess not so much
+
+        # orbital params
+        p.add('t0', value = times_less[35], vary = 1, min = times_less[0], max = times_less[-1])
+        p.add('per', value = 3.868, vary = 0)#1, min = 3.5, max = 4.5)
+        p.add('a', value = 11.314, vary = 0)#1, min = 2, max = 20)
+        p.add('b', value = 0.69, vary = 0)#1, min = 0, max = 1)
+        p.add('ecc', value = 0, vary = 0)
+        p.add('w', value = 0., vary = 0)
+
+        # stellar/planetary params
+        p.add('rp2' , value = 0.01, vary = 1, min = -0.5, max = 0.5)
+        params.limb_dark = "nonlinear"        #limb darkening model
+        params.u = [0.5, 0.1, 0.1, -0.1]      #limb darkening coefficients [u1, u2, u3, u4]
+        #p.add('c1', value = 0.5, vary = 0) # these need to be orthogonalized if you want to fit for them
+        #p.add('c2', value = 0.5, vary = 0)
+
+        # systematics params
+        p.add('v2_roll', value = 0, vary = 1)
+        p.add('v3_roll', value = 0, vary = 1)
+        p.add('lat', value = 0, vary = 1)
+        p.add('long', value = 0, vary = 1)
+        p.add('RA', value = 0, vary = 1)
+        p.add('DEC', value = 0, vary = 1)
+
+        # baseline flux level
+        p.add('f0', value = lc[0], vary = 1)
+
+        # we iterate N times, fitting the data, and estimating errorbars. we re-fit from the best-fit and error of the previous fit
+        # this is to ensure that we never get stuck in some tiny global minimum, and explore the space better
+        # this also gives better uncertainties
+        err = None
+        for _ in range(N_iters-1):
+            result = lmfit.minimize(residual, params = p, args = (times, params, lc, err, jitters)) # fit data
+            err = np.std(lc_less - model_light_curve(p, times, params, jitters)[0])
+            for name, param in result.params.items(): # iterate through our lmfit parameters and update the variables
+                p[name].value = param.value
+
+        # one final fit to be sure. these Nth fits are fast.
+        err = np.std(lc - model_light_curve(p, times, params, jitters)[0])
+        result = lmfit.minimize(residual, params = p, args = (times, params, lc, err, jitters))
+
+        # iterate through our two dictionaries to save fits and fit uncertainties
+        for name, param in result.params.items():
+            if param.vary == 1:
+                p[name].value = param.value
+                fit_param[name] = param.value
+                fit_uncs[name+'_unc'] = param.stderr
+
+        t_final = np.linspace(times[0], times[-1], 1000)        
+        model_fit = model_light_curve(p, times, params, jitters) # stores the final best fitting model
+        model_final = transit_final(p, t_final, params, jitters)
+        data_fit_cube = [fit_param, fit_uncs, model_final, lc] # stores all our stuff in a neat cube
+        return data_fit_cube
+    
+    elif sys_method == "gp":
+        # Create dictionaries:
+        time, fluxes, fluxes_error, fwhm, sys = {},{},{},{}, {}
+        # Save data into those dictionaries:
+        time['stis1'], fluxes['stis1'], fluxes_error['stis1'] = times, lc/lc[0], 0.001*np.array(lc/lc[0])
+        sys["stis1"]= np.vstack(([jitters["V2_roll"]], [jitters["V3_roll"]], [jitters["RA"]], [jitters["DEC"]], [jitters["Longitude"]], [jitters["Latitude"]])).T
+
+        params = ['P_p1','t0_p1','p_p1','b_p1', 'a_p1', 'q1_stis1','q2_stis1','ecc_p1','omega_p1',\
+                      'rho', 'mdilution_stis1', 'mflux_stis1', 'sigma_w_stis1', 'GP_sigma_stis1', 'GP_alpha0_stis1', 'GP_alpha1_stis1', 'GP_alpha2_stis1', 'GP_alpha3_stis1', 'GP_alpha4_stis1', 'GP_alpha5_stis1']# 'GP_alpha0_jhu']#, 'GP_alpha1_jhu']
+
+        dists = ['fixed','normal','uniform','fixed', 'fixed', 'uniform','uniform','fixed','fixed',\
+                         'loguniform', 'fixed', 'normal', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform']#, 'loguniform']
+
+        hyperps = [3.868, [times[0][0][38],.1], [0.1,.3], 0.686, 12.00, [0, 1.0], [0., 1.0], 0.0, 90.,\
+                           [300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3]]#, [1e-3,1e3]]
+
+
+        priors = {}
+        for param, dist, hyperp in zip(params, dists, hyperps):
+            priors[param] = {}
+            priors[param]['distribution'], priors[param]['hyperparameters'] = dist, hyperp
+
+        # Perform the juliet fit. Load dataset first:
+        dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
+                              yerr_lc = fluxes_error, GP_regressors_lc = sys,
+                              out_folder = 'wasp-69_bp_less')
+
+        # Fit:
+        results = dataset.fit(n_live_points = 500, verbose = True)
+        
+        return results
+    
 
 def model_light_curve(p, t, params, jitters):
     """
@@ -631,33 +728,29 @@ def model_light_curve(p, t, params, jitters):
         light_curve = batman.TransitModel(params, t).light_curve(params)
     
     # zaf said best detrenders were the roll ones
-    systematics =  p["v2_roll"]*np.array(jitters["V2_roll"]) + p["v3_roll"]*np.array(jitters["V3_roll"]) +     p["lat"]*np.array(jitters["Latitude"]) + p["long"]*np.array(jitters["Longitude"]) +     p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1 #p["offset"]
-    
-    #systematics = p['xs']*xs + p['ys']*ys + p['xys']*xys + p['xs2']*xs2 + p['ys2']*ys2 \
-    #           + p['common_mode']*common_mode + p['lin']*tlin + 1 
-    
-    #systematics = exp(-t/p['exp_tmscl']) + p['jitter_amp']*telescope_pos # leaving out systematics right now
-    
-    #plt.plot(light_curve)
-    #plt.plot(systematics)
+    systematics =  p["v2_roll"]*np.array(jitters["V2_roll"]) + p["v3_roll"]*np.array(jitters["V3_roll"]) + \
+    p["lat"]*np.array(jitters["Latitude"]) + p["long"]*np.array(jitters["Longitude"]) + \
+    p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1 #p["offset"]
     
     model = p['f0'] * light_curve * systematics
-    # more finely sampled time grid for visualization purposes
-    t_final = np.linspace(t[0], t[-1], 1000)
+    t_final = np.linspace(t[0], t[-1], 1000)  
     light_curve_plot = batman.TransitModel(params, t_final).light_curve(params)
     #plt.plot(t_final, p['f0'] * light_curve_plot)
     #plt.xlabel("Time (BJD-TBD)")
     #plt.ylabel("Counts")
-    
+    #plt.plot(model)
+    #plt.plot(model)
+    #plt.show()
+    #print(model)
     return model, systematics, light_curve
 
     
-def residual(p, t, params, data, err, jitters):#, telescope_pos, err):
+def residual(p, t, params, data, err, jitters):
     """
     Outputs the residual of the model and data.
     """
     
-    model = model_light_curve(p, t, params, jitters)[0]#, telescope_pos)[0]
+    model = model_light_curve(p, t, params, jitters)[0]
     sys = model_light_curve(p, t, params, jitters)[1]
     
     '''
@@ -668,12 +761,12 @@ def residual(p, t, params, data, err, jitters):#, telescope_pos, err):
     plt.show()
     plt.plot(t, model)
     plt.scatter(t, data, color = "blue", label = "Original", alpha = 0.5)
-    plt.legend()
     plt.xlabel("Time (BJD-TBD)")
     plt.ylabel("Counts")
+    plt.legend()
     plt.show()
     '''
-    if err is None:
+    if err == None:
         err = np.sqrt(p['f0']) # if no errorbars specified, assume shot noise uncertainty from baseline flux
 
     chi2 = sum((data-model)**2/err**2)
