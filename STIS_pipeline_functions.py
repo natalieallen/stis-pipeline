@@ -613,44 +613,55 @@ def impact_param(i, a_Rs):
 def inclination(b, a_Rs):
     return np.rad2deg(np.arccos(b/a_Rs))
 
-def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3, gp_name = None):
-    # these are bad right now - i'm just manually putting in system values for wasp-69b since the plan is to add a call to the
-    # updated parameter database later. once those are in place, will be able to make these much better
+def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_iters = 3, gp_name = None, instrument_name = "STIS"):
+    
     if sys_method == "jitter":
         p = lmfit.Parameters()
         fit_param = {} # dictionary to save our fit params
         fit_uncs = {} # dictionary to save our fit uncertainties
         params = batman.TransitParams()
         N_iters = N_iters
+        
         # initializing lmfit parameters
         # vary = 0 for fixed, 1 for floating
         # keeping bounds fairly wide is important. central guess not so much
-
+        
         # orbital params
-        p.add('t0', value = times[35], vary = 1, min = times[0], max = times[-1])
-        p.add('per', value = 4.055, vary = 0)#1, min = 3.5, max = 4.5)
-        p.add('a', value = 11.612, vary = 0)#1, min = 2, max = 20)
-        p.add('b', value = 0.45, vary = 0)#1, min = 0, max = 1)
-        p.add('ecc', value = 0, vary = 0)
-        p.add('w', value = 0., vary = 0)
-
-        # stellar/planetary params
-        p.add('rp2' , value = 0.01, vary = 1, min = -0.5, max = 0.5)
-        params.limb_dark = "nonlinear"        #limb darkening model
-        params.u = [0.5, 0.1, 0.1, -0.1]      #limb darkening coefficients [u1, u2, u3, u4]
-        #p.add('c1', value = 0.5, vary = 0) # these need to be orthogonalized if you want to fit for them
-        #p.add('c2', value = 0.5, vary = 0)
-
+        for i in input_params.keys():
+            if len(input_params[i]) == 1:
+                p.add(i, value = input_params[i], vary = 0)
+            elif len(input_params[i]) == 2:
+                p.add(i, value = input_params[i][0], vary = 1, min = input_params[i][0] - input_params[i][1], max = input_params[i][0] + params[i][1])
+        
+        if limb_darkening == "quadratic":
+            params.limb_dark = "quadratic"
+            p.add('c1', value = 0.5, vary = 1) # these need to be orthogonalized if you want to fit for them
+            p.add('c2', value = 0.5, vary = 1)
+            params.u = [p['c1'], p['c2']]
+        
         # systematics params
-        p.add('v2_roll', value = 0, vary = 1)
-        p.add('v3_roll', value = 0, vary = 1)
-        p.add('lat', value = 0, vary = 1)
-        p.add('long', value = 0, vary = 1)
-        p.add('RA', value = 0, vary = 1)
-        p.add('DEC', value = 0, vary = 1)
-
+        for j in jitters.keys():
+            p.add(i, value = 0, vary = 1)
+            
         # baseline flux level
         p.add('f0', value = lc[0], vary = 1)
+
+        
+        #p.add('t0', value = times[35], vary = 1, min = times[0], max = times[-1])
+        #p.add('per', value = 4.055, vary = 0)#1, min = 3.5, max = 4.5)
+        #p.add('a', value = 11.612, vary = 0)#1, min = 2, max = 20)
+        #p.add('b', value = 0.45, vary = 0)#1, min = 0, max = 1)
+        #p.add('ecc', value = 0, vary = 0)
+        #p.add('w', value = 0., vary = 0)
+
+        # stellar/planetary params
+        #p.add('rp2' , value = 0.01, vary = 1, min = -0.5, max = 0.5)
+        #params.limb_dark = "nonlinear"        #limb darkening model
+        #params.u = [0.5, 0.1, 0.1, -0.1]      #limb darkening coefficients [u1, u2, u3, u4]
+
+
+
+        
 
         # we iterate N times, fitting the data, and estimating errorbars. we re-fit from the best-fit and error of the previous fit
         # this is to ensure that we never get stuck in some tiny global minimum, and explore the space better
@@ -680,165 +691,94 @@ def white_light_fit(times, lc, jitters, sys_method = "jitter", N_iters = 3, gp_n
         return data_fit_cube
     
     elif sys_method == "gp":
-        # Create dictionaries:
-        time, fluxes, fluxes_error, fwhm, sys = {},{},{},{}, {}
-        # Save data into those dictionaries:
-        time['stis1'], fluxes['stis1'], fluxes_error['stis1'] = times, lc/lc[0], 0.001*np.array(lc/lc[0])
-        sys["stis1"]= np.vstack(([jitters["V2_roll"]], [jitters["V3_roll"]], [jitters["RA"]], [jitters["DEC"]], [jitters["Longitude"]], [jitters["Latitude"]])).T
+            # Create dictionaries:
+            time, fluxes, fluxes_error, fwhm, sys = {},{},{},{}, {}
+            # Save data into those dictionaries:
+            time[instrument_name], fluxes[instrument_name], fluxes_error[instrument_name] = times, lc/lc[0], \
+            0.001*np.array(lc/lc[0])
+            
+            sys[instrument_name]= np.vstack(jitters.values()).T
 
-        params = ['P_p1','t0_p1','p_p1','b_p1', 'a_p1', 'q1_stis1','q2_stis1','ecc_p1','omega_p1',\
-                      'rho', 'mdilution_stis1', 'mflux_stis1', 'sigma_w_stis1', 'GP_sigma_stis1', 'GP_alpha0_stis1', 'GP_alpha1_stis1', 'GP_alpha2_stis1', 'GP_alpha3_stis1', 'GP_alpha4_stis1', 'GP_alpha5_stis1']# 'GP_alpha0_jhu']#, 'GP_alpha1_jhu']
+            input_param_names = []
+            input_dist = []
+            hyperps_vals = []
+            for i in input_params.keys:
+                name = i + "_p1"
+                input_param_names.append(name)
 
-        dists = ['fixed','normal','uniform','fixed', 'fixed', 'uniform','uniform','fixed','fixed',\
-                         'loguniform', 'fixed', 'normal', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform']#, 'loguniform']
+                if len(input_params[i]) == 1:
+                    input_dist.append("fixed")
+                    hyperps_vals.append(input_params[i][0])
 
-        hyperps = [4.055, [times[38],.1], [0.1,.3], 0.45, 11.612, [0, 1.0], [0., 1.0], 0.0, 90.,\
-                           [300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3]]#, [1e-3,1e3]]
+                elif len(input_params[i]) == 2:
+                    input_dist.append("normal")
+                    hyperps_vals.append(input_params[i])
+
+            for i in range(len(jitters.keys())):
+                name = "GP_alpha_" + str(i) + "_" + instrument_name
+                input_param_names.append(name)
+                input_dist.append("lognormal")
+                hyperps_vals.append([1e-5, 1e5])
+
+            if limb_darkening == "quadratic":
+                ld_names = ["q1_" + instrument_name, "q2_" + instrument_name]
+                ld_dist = ['uniform','uniform']
+                ld_hyperps = [[0,1], [0,1]]
+
+            other_params = ["rho", "mdilution_" + instrument_name, "mflux_" + instrument_name, "sigma_w_" + instrument_name \
+                           "GP_sigma_" + instrument_name]
+
+            other_params_dist = ['loguniform', 'fixed', 'normal', 'loguniform', 'loguniform']
+
+            other_params_hyperps = [[300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6]]
 
 
-        priors = {}
-        for param, dist, hyperp in zip(params, dists, hyperps):
-            priors[param] = {}
-            priors[param]['distribution'], priors[param]['hyperparameters'] = dist, hyperp
+            params = input_param_names + ld_names + other_params
 
-        # Perform the juliet fit. Load dataset first:
-        if gp_name is None:
-            print("Oops! you need to enter a name for the output folder for your GP fit")
-        else:
-            dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
-                              yerr_lc = fluxes_error, GP_regressors_lc = sys,
-                              out_folder = gp_name)
+            dists = input_dist + ld_dist + other_param_dist
 
-        # Fit:
-        results = dataset.fit(n_live_points = 500, verbose = True)
-        
-        return results
+            hyperps = hyperps_vals + ld_hyperps + other_params_hyperps
+
+            priors = {}
+            for param, dist, hyperp in zip(params, dists, hyperps):
+                priors[param] = {}
+                priors[param]['distribution'], priors[param]['hyperparameters'] = dist, hyperp
+
+            # Perform the juliet fit. Load dataset first:
+            if gp_name is None:
+                print("Oops! you need to enter a name for the output folder for your GP fit")
+            else:
+                dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
+                                  yerr_lc = fluxes_error, GP_regressors_lc = sys,
+                                  out_folder = gp_name)
+
+            # Fit:
+            results = dataset.fit(n_live_points = 500, verbose = True)
+
+            return results
     
-def white_light_fit_121(times, lc, jitters, sys_method = "jitter", N_iters = 3, gp_name = None):
-    # these are bad right now - i'm just manually putting in system values for wasp-69b since the plan is to add a call to the
-    # updated parameter database later. once those are in place, will be able to make these much better
-    if sys_method == "jitter":
-        p = lmfit.Parameters()
-        fit_param = {} # dictionary to save our fit params
-        fit_uncs = {} # dictionary to save our fit uncertainties
-        params = batman.TransitParams()
-        N_iters = N_iters
-        # initializing lmfit parameters
-        # vary = 0 for fixed, 1 for floating
-        # keeping bounds fairly wide is important. central guess not so much
-
-        # orbital params
-        p.add('t0', value = times[35], vary = 1, min = times[0], max = times[-1])
-        p.add('per', value = 3.868, vary = 0)#1, min = 3.5, max = 4.5)
-        p.add('a', value = 11.314, vary = 0)#1, min = 2, max = 20)
-        p.add('b', value = 0.69, vary = 0)#1, min = 0, max = 1)
-        p.add('ecc', value = 0, vary = 0)
-        p.add('w', value = 0., vary = 0)
-
-        # stellar/planetary params
-        p.add('rp2' , value = 0.01, vary = 1, min = -0.5, max = 0.5)
-        params.limb_dark = "nonlinear"        #limb darkening model
-        params.u = [0.5, 0.1, 0.1, -0.1]      #limb darkening coefficients [u1, u2, u3, u4]
-        #p.add('c1', value = 0.5, vary = 0) # these need to be orthogonalized if you want to fit for them
-        #p.add('c2', value = 0.5, vary = 0)
-
-        # systematics params
-        p.add('v2_roll', value = 0, vary = 1)
-        p.add('v3_roll', value = 0, vary = 1)
-        p.add('lat', value = 0, vary = 1)
-        p.add('long', value = 0, vary = 1)
-        p.add('RA', value = 0, vary = 1)
-        p.add('DEC', value = 0, vary = 1)
-
-        # baseline flux level
-        p.add('f0', value = lc[0], vary = 1)
-
-        # we iterate N times, fitting the data, and estimating errorbars. we re-fit from the best-fit and error of the previous fit
-        # this is to ensure that we never get stuck in some tiny global minimum, and explore the space better
-        # this also gives better uncertainties
-        err = None
-        for _ in range(N_iters-1):
-            result = lmfit.minimize(residual, params = p, args = (times, params, lc, err, jitters)) # fit data
-            err = np.std(lc - model_light_curve(p, times, params, jitters)[0])
-            for name, param in result.params.items(): # iterate through our lmfit parameters and update the variables
-                p[name].value = param.value
-
-        # one final fit to be sure. these Nth fits are fast.
-        err = np.std(lc - model_light_curve(p, times, params, jitters)[0])
-        result = lmfit.minimize(residual, params = p, args = (times, params, lc, err, jitters))
-
-        # iterate through our two dictionaries to save fits and fit uncertainties
-        for name, param in result.params.items():
-            if param.vary == 1:
-                p[name].value = param.value
-                fit_param[name] = param.value
-                fit_uncs[name+'_unc'] = param.stderr
-
-        t_final = np.linspace(times[0], times[-1], 1000)        
-        model_fit = model_light_curve(p, times, params, jitters) # stores the final best fitting model
-        model_final = transit_final(p, t_final, params, jitters)
-        data_fit_cube = [fit_param, fit_uncs, model_final, lc] # stores all our stuff in a neat cube
-        return data_fit_cube
-    
-    elif sys_method == "gp":
-        # Create dictionaries:
-        time, fluxes, fluxes_error, fwhm, sys = {},{},{},{}, {}
-        # Save data into those dictionaries:
-        time['stis1'], fluxes['stis1'], fluxes_error['stis1'] = times, lc/lc[0], 0.001*np.array(lc/lc[0])
-        sys["stis1"]= np.vstack(([jitters["V2_roll"]], [jitters["V3_roll"]], [jitters["RA"]], [jitters["DEC"]], [jitters["Longitude"]], [jitters["Latitude"]])).T
-
-        params = ['P_p1','t0_p1','p_p1','b_p1', 'a_p1', 'q1_stis1','q2_stis1','ecc_p1','omega_p1',\
-                      'rho', 'mdilution_stis1', 'mflux_stis1', 'sigma_w_stis1', 'GP_sigma_stis1', 'GP_alpha0_stis1', 'GP_alpha1_stis1', 'GP_alpha2_stis1', 'GP_alpha3_stis1', 'GP_alpha4_stis1', 'GP_alpha5_stis1']# 'GP_alpha0_jhu']#, 'GP_alpha1_jhu']
-
-        dists = ['fixed','normal','uniform','fixed', 'fixed', 'uniform','uniform','fixed','fixed',\
-                         'loguniform', 'fixed', 'normal', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform', 'loguniform']#, 'loguniform']
-
-        hyperps = [3.868, [times[38],.1], [0.1,.3], 0.686, 12.00, [0, 1.0], [0., 1.0], 0.0, 90.,\
-                           [300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3], [1e-5,1e3]]#, [1e-3,1e3]]
-
-
-        priors = {}
-        for param, dist, hyperp in zip(params, dists, hyperps):
-            priors[param] = {}
-            priors[param]['distribution'], priors[param]['hyperparameters'] = dist, hyperp
-
-        # Perform the juliet fit. Load dataset first:
-        if gp_name is None:
-            print("Oops! you need to enter a name for the output folder for your GP fit")
-        else:
-            dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
-                              yerr_lc = fluxes_error, GP_regressors_lc = sys,
-                              out_folder = gp_name)
-
-        # Fit:
-        results = dataset.fit(n_live_points = 500, verbose = True)
-        
-        return results
-    
-
 def model_light_curve(p, t, params, jitters):
     """
     Generates a light curve with systematics. Uses the lmfit 'p' dictionary.
     """
     params.t0  = p['t0']
-    params.per = p['per']
-    params.rp  = np.sqrt(p['rp2'])
+    params.per = p['P']
+    params.rp  = p['p']
     params.a   = p['a']
     params.inc = inclination(p['b'], p['a'])
     params.ecc = p['ecc']
+    # what is w?? some sort of different omega?
     params.w   = p['w']
-    #params.limb_dark = "quadratic"
-    #params.u = [p['c1'], p['c2']]
 
-    if p['rp2'] == 0:
+    if p['p'] == 0:
         light_curve = np.ones(len(t)) # if it doesn't want a transit, give it a flat line
     else:
         light_curve = batman.TransitModel(params, t).light_curve(params)
     
-    # zaf said best detrenders were the roll ones
+    # there must be a way to make this more robust
     systematics =  p["v2_roll"]*np.array(jitters["V2_roll"]) + p["v3_roll"]*np.array(jitters["V3_roll"]) + \
     p["lat"]*np.array(jitters["Latitude"]) + p["long"]*np.array(jitters["Longitude"]) + \
-    p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1 #p["offset"]
+    p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1 #
     
     model = p['f0'] * light_curve * systematics
     t_final = np.linspace(t[0], t[-1], 1000)  
