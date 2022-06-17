@@ -613,7 +613,7 @@ def impact_param(i, a_Rs):
 def inclination(b, a_Rs):
     return np.rad2deg(np.arccos(b/a_Rs))
 
-def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_iters = 3, gp_name = None, instrument_name = "STIS"):
+def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", limb_darkening = "quadratic", N_iters = 3, gp_name = None, instrument_name = "STIS"):
     
     if sys_method == "jitter":
         p = lmfit.Parameters()
@@ -629,9 +629,9 @@ def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_i
         # orbital params
         for i in input_params.keys():
             if len(input_params[i]) == 1:
-                p.add(i, value = input_params[i], vary = 0)
+                p.add(i, value = input_params[i][0], vary = 0)
             elif len(input_params[i]) == 2:
-                p.add(i, value = input_params[i][0], vary = 1, min = input_params[i][0] - input_params[i][1], max = input_params[i][0] + params[i][1])
+                p.add(i, value = input_params[i][0], vary = 1, min = input_params[i][0] - input_params[i][1], max = input_params[i][0] + input_params[i][1])
         
         if limb_darkening == "quadratic":
             params.limb_dark = "quadratic"
@@ -641,27 +641,11 @@ def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_i
         
         # systematics params
         for j in jitters.keys():
-            p.add(i, value = 0, vary = 1)
+            p.add(j, value = 0, vary = 1)
             
         # baseline flux level
         p.add('f0', value = lc[0], vary = 1)
 
-        
-        #p.add('t0', value = times[35], vary = 1, min = times[0], max = times[-1])
-        #p.add('per', value = 4.055, vary = 0)#1, min = 3.5, max = 4.5)
-        #p.add('a', value = 11.612, vary = 0)#1, min = 2, max = 20)
-        #p.add('b', value = 0.45, vary = 0)#1, min = 0, max = 1)
-        #p.add('ecc', value = 0, vary = 0)
-        #p.add('w', value = 0., vary = 0)
-
-        # stellar/planetary params
-        #p.add('rp2' , value = 0.01, vary = 1, min = -0.5, max = 0.5)
-        #params.limb_dark = "nonlinear"        #limb darkening model
-        #params.u = [0.5, 0.1, 0.1, -0.1]      #limb darkening coefficients [u1, u2, u3, u4]
-
-
-
-        
 
         # we iterate N times, fitting the data, and estimating errorbars. we re-fit from the best-fit and error of the previous fit
         # this is to ensure that we never get stuck in some tiny global minimum, and explore the space better
@@ -702,7 +686,7 @@ def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_i
             input_param_names = []
             input_dist = []
             hyperps_vals = []
-            for i in input_params.keys:
+            for i in input_params.keys():
                 name = i + "_p1"
                 input_param_names.append(name)
 
@@ -713,19 +697,22 @@ def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_i
                 elif len(input_params[i]) == 2:
                     input_dist.append("normal")
                     hyperps_vals.append(input_params[i])
-
+            
+            input_param_names_sys = []
+            input_dist_sys = []
+            hyperps_vals_sys = []
             for i in range(len(jitters.keys())):
-                name = "GP_alpha_" + str(i) + "_" + instrument_name
-                input_param_names.append(name)
-                input_dist.append("lognormal")
-                hyperps_vals.append([1e-5, 1e5])
+                name = "GP_alpha" + str(i) + "_" + instrument_name
+                input_param_names_sys.append(name)
+                input_dist_sys.append("loguniform")
+                hyperps_vals_sys.append([1e-5, 1e5])
 
             if limb_darkening == "quadratic":
                 ld_names = ["q1_" + instrument_name, "q2_" + instrument_name]
                 ld_dist = ['uniform','uniform']
                 ld_hyperps = [[0,1], [0,1]]
 
-            other_params = ["rho", "mdilution_" + instrument_name, "mflux_" + instrument_name, "sigma_w_" + instrument_name \
+            other_params = ["rho", "mdilution_" + instrument_name, "mflux_" + instrument_name, "sigma_w_" + instrument_name, \
                            "GP_sigma_" + instrument_name]
 
             other_params_dist = ['loguniform', 'fixed', 'normal', 'loguniform', 'loguniform']
@@ -733,11 +720,14 @@ def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_i
             other_params_hyperps = [[300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6]]
 
 
-            params = input_param_names + ld_names + other_params
+            params = input_param_names + ld_names + other_params + input_param_names_sys
 
-            dists = input_dist + ld_dist + other_param_dist
+            dists = input_dist + ld_dist + other_params_dist + input_dist_sys
 
-            hyperps = hyperps_vals + ld_hyperps + other_params_hyperps
+            hyperps = hyperps_vals + ld_hyperps + other_params_hyperps + hyperps_vals_sys
+            print(params)
+            print(dists)
+            print(hyperps)
 
             priors = {}
             for param, dist, hyperp in zip(params, dists, hyperps):
@@ -757,6 +747,7 @@ def white_light_fit(input_params, times, lc, jitters, sys_method = "jitter", N_i
 
             return results
     
+
 def model_light_curve(p, t, params, jitters):
     """
     Generates a light curve with systematics. Uses the lmfit 'p' dictionary.
@@ -767,8 +758,7 @@ def model_light_curve(p, t, params, jitters):
     params.a   = p['a']
     params.inc = inclination(p['b'], p['a'])
     params.ecc = p['ecc']
-    # what is w?? some sort of different omega?
-    params.w   = p['w']
+    params.w   = p['omega']
 
     if p['p'] == 0:
         light_curve = np.ones(len(t)) # if it doesn't want a transit, give it a flat line
@@ -776,8 +766,8 @@ def model_light_curve(p, t, params, jitters):
         light_curve = batman.TransitModel(params, t).light_curve(params)
     
     # there must be a way to make this more robust
-    systematics =  p["v2_roll"]*np.array(jitters["V2_roll"]) + p["v3_roll"]*np.array(jitters["V3_roll"]) + \
-    p["lat"]*np.array(jitters["Latitude"]) + p["long"]*np.array(jitters["Longitude"]) + \
+    systematics =  p["V2_roll"]*np.array(jitters["V2_roll"]) + p["V3_roll"]*np.array(jitters["V3_roll"]) + \
+    p["Latitude"]*np.array(jitters["Latitude"]) + p["Longitude"]*np.array(jitters["Longitude"]) + \
     p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1 #
     
     model = p['f0'] * light_curve * systematics
@@ -824,13 +814,99 @@ def residual(p, t, params, data, err, jitters):
 
 def transit_final(p, t, params, jitters):
     transit_model_final = batman.TransitModel(params, t).light_curve(params)
-    systematics = p["v2_roll"]*np.array(jitters["V2_roll"]) + p["v3_roll"]*np.array(jitters["V3_roll"]) + \
-    p["lat"]*np.array(jitters["Latitude"]) + p["long"]*np.array(jitters["Longitude"]) + \
+    systematics = p["V2_roll"]*np.array(jitters["V2_roll"]) + p["V3_roll"]*np.array(jitters["V3_roll"]) + \
+    p["Latitude"]*np.array(jitters["Latitude"]) + p["Longitude"]*np.array(jitters["Longitude"]) + \
     p["RA"]*np.array(jitters["RA"]) + p["DEC"]*np.array(jitters["DEC"]) + 1
     
     #final_model = p["f0"] * transit_model_final * systematics
     
     return [p["f0"], transit_model_final, systematics]
+
+
+def joint_white_light_fit(input_params, times1, lc1, jitters1, times2, lc2, jitters2, sys_method = "jitter", limb_darkening = "quadratic", N_iters = 3, gp_name = None, instrument_name1 = "STIS1", instrument_name2 = "STIS2"):
+    if sys_method == "jitter":
+        print("Whoops! Haven't implemented joint fitting with jitter detrending yet :)")
+    
+    elif sys_method == "gp":
+            # Create dictionaries:
+            time, fluxes, fluxes_error, fwhm, sys = {},{},{},{}, {}
+            # Save data into those dictionaries:
+            time[instrument_name1], fluxes[instrument_name1], fluxes_error[instrument_name1] = times1, lc1/lc1[0], \
+            0.001*np.array(lc1/lc1[0])
+            time[instrument_name2], fluxes[instrument_name2], fluxes_error[instrument_name2] = times2, lc2/lc2[0], \
+            0.001*np.array(lc2/lc2[0])
+            
+            sys[instrument_name1]= np.vstack(jitters1.values()).T
+            sys[instrument_name2]= np.vstack(jitters2.values()).T
+
+            input_param_names = []
+            input_dist = []
+            hyperps_vals = []
+            for i in input_params.keys():
+                name = i + "_p1"
+                input_param_names.append(name)
+
+                if len(input_params[i]) == 1:
+                    input_dist.append("fixed")
+                    hyperps_vals.append(input_params[i][0])
+
+                elif len(input_params[i]) == 2:
+                    input_dist.append("normal")
+                    hyperps_vals.append(input_params[i])
+            
+            input_param_names_sys1 = []
+            input_dist_sys1 = []
+            hyperps_vals_sys1 = []
+            for i in range(len(jitters1.keys())):
+                name = "GP_alpha" + str(i) + "_" + instrument_name1
+                input_param_names_sys1.append(name)
+                input_dist_sys1.append("loguniform")
+                hyperps_vals_sys1.append([1e-5, 1e5])
+                
+            input_param_names_sys2 = []
+            input_dist_sys2 = []
+            hyperps_vals_sys2 = []
+            for i in range(len(jitters2.keys())):
+                name = "GP_alpha" + str(i) + "_" + instrument_name2
+                input_param_names_sys2.append(name)
+                input_dist_sys2.append("loguniform")
+                hyperps_vals_sys2.append([1e-5, 1e5])
+
+            if limb_darkening == "quadratic":
+                ld_names = ["q1_" + instrument_name1 + instrument_name2, "q2_" + instrument_name1 + instrument_name2]
+                ld_dist = ['uniform','uniform']
+                ld_hyperps = [[0,1], [0,1]]
+
+            other_params = ["rho", "mdilution_" + instrument_name1, "mflux_" + instrument_name1, "sigma_w_" + instrument_name1, "GP_sigma_" + instrument_name1, "mdilution_" + instrument_name2, "mflux_" + instrument_name2, "sigma_w_" + instrument_name2, "GP_sigma_" + instrument_name2]
+
+            other_params_dist = ['loguniform', 'fixed', 'normal', 'loguniform', 'loguniform', 'fixed', 'normal', 'loguniform', 'loguniform']
+
+            other_params_hyperps = [[300, 1000.], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6], 1.0, [0.,1.0], [10, 1000.], [1e-6, 1e6]]
+
+
+            params = input_param_names + ld_names + other_params + input_param_names_sys1 + input_param_names_sys2
+
+            dists = input_dist + ld_dist + other_params_dist + input_dist_sys1 + input_dist_sys2
+
+            hyperps = hyperps_vals + ld_hyperps + other_params_hyperps + hyperps_vals_sys1 + hyperps_vals_sys2
+
+            priors = {}
+            for param, dist, hyperp in zip(params, dists, hyperps):
+                priors[param] = {}
+                priors[param]['distribution'], priors[param]['hyperparameters'] = dist, hyperp
+
+            # Perform the juliet fit. Load dataset first:
+            if gp_name is None:
+                print("Oops! you need to enter a name for the output folder for your GP fit")
+            else:
+                dataset = juliet.load(priors=priors, t_lc = time, y_lc = fluxes, \
+                                  yerr_lc = fluxes_error, GP_regressors_lc = sys,
+                                  out_folder = gp_name)
+
+            # Fit:
+            results = dataset.fit(n_live_points = 500, verbose = True)
+
+            return results
 
 #Limb Darkeneing
 @custom_model
